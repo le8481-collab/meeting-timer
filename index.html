@@ -642,15 +642,29 @@ function getDemoEvents() {
   ];
 }
 
+// Parse Graph API dateTime (no timezone suffix) as local time
+function parseGraphDate(dt) {
+  if (!dt) return new Date();
+  // Graph API returns local time without Z; appending nothing makes JS treat as UTC
+  // We need to treat it as local — replace by parsing manually
+  if (dt.endsWith('Z') || dt.includes('+')) return new Date(dt);
+  return new Date(dt + '+08:00'); // Force Taiwan time (UTC+8)
+}
+
 async function fetchOutlookEvents() {
   try {
     const token = await getToken() || accessToken;
     if (!token) return getDemoEvents();
 
     const today = new Date();
+    // Build query range in local time string format for Graph API
+    const pad = n => String(n).padStart(2,'0');
+    const d = new Date();
+    const localStart = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T00:00:00`;
+    const localEnd   = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T23:59:59`;
     const start = new Date(today.setHours(0,0,0,0)).toISOString();
     const end   = new Date(today.setHours(23,59,59,999)).toISOString();
-    const url = `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${start}&endDateTime=${end}&$select=subject,start,end,location,organizer,id&$orderby=start/dateTime&$top=20`;
+    const url = `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${localStart}&endDateTime=${localEnd}&$select=subject,start,end,location,organizer,id&$orderby=start/dateTime&$top=20`;
 
     const resp = await fetch(url, {
       headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
@@ -691,8 +705,8 @@ function renderEvents(events) {
 
   const now = new Date();
   grid.innerHTML = events.map(ev => {
-    const start = new Date(ev.start.dateTime);
-    const end   = new Date(ev.end.dateTime);
+    const start = parseGraphDate(ev.start.dateTime);
+    const end   = parseGraphDate(ev.end.dateTime);
     const diffStart = (start - now) / 60000;
     const duration  = Math.round((end - start) / 60000);
     const isLive    = start <= now && end > now;
@@ -744,8 +758,8 @@ function checkAndActivateTimer(events) {
   if (!events) return;
   const now = new Date();
   for (const ev of events) {
-    const start = new Date(ev.start.dateTime);
-    const end   = new Date(ev.end.dateTime);
+    const start = parseGraphDate(ev.start.dateTime);
+    const end   = parseGraphDate(ev.end.dateTime);
     if (start <= now && end > now && !dismissedTimers.has(ev.id) && (!activeEvent || activeEvent.id !== ev.id)) {
       activateTimer(ev);
       break;
@@ -766,8 +780,8 @@ function activateTimer(ev) {
 
 function updateTimer(ev) {
   const now       = new Date();
-  const end       = new Date(ev.end.dateTime);
-  const start     = new Date(ev.start.dateTime);
+  const end       = parseGraphDate(ev.end.dateTime);
+  const start     = parseGraphDate(ev.start.dateTime);
   const total     = (end - start) / 1000;
   const remaining = Math.max(0, (end - now) / 1000);
   const elapsed   = total - remaining;
